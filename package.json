@@ -13,6 +13,7 @@
     "deploy:cloudflare": "wrangler deploy cloudflare/worker.ts",
     "deploy:firebase": "npm run build && firebase deploy --only hosting,functions",
     "tsc": "tsc --noemit",
+    "vue:tsc": "npx vue-tsc --noemit",
     "npm:audit": "npm audit",
     "npm:audit:fix": "npm audit fix",
     "npm:install": "npm install"
@@ -29,6 +30,7 @@
     "tsx": "^4.19.3",
     "typescript": "^5.8.3",
     "vite": "^6.3.2",
+    "vue-tsc": "^3.2.6",
     "wrangler": "^4.10.0"
   }
 }

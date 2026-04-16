@@ -1,5 +1,5 @@
 import { STORAGE_KEY, STORAGE_VERSION } from "./constants";
-import { Position, StorageModel } from "./types";
+import { NewPosition, Position, StorageModel } from "./types";
 
 export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -22,7 +22,9 @@ function defaultPositions(): Position[] {
   ];
 }
 
-export function createStorageModel(positions: Position[] = defaultPositions()): StorageModel {
+export function createStorageModel(
+  positions: Position[] = defaultPositions(),
+): StorageModel {
   return {
     version: STORAGE_VERSION,
     positions,
@@ -77,4 +79,25 @@ export function createEmptyPosition(): Position {
     sold: false,
     hide: false,
   };
+}
+
+export function createNewPosition(): NewPosition {
+  return {
+    id: "",
+    name: null,
+    url: null,
+    isin: null,
+    exchange: null,
+    amount: null,
+    rate: null,
+    want: null,
+    sold: false,
+    hide: false,
+  };
+}
+
+export function faviconUrl(url: string | null): string {
+  return url
+    ? `https://s2.googleusercontent.com/s2/favicons?domain_url=http://${url}`
+    : "";
 }

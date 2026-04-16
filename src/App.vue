@@ -21,7 +21,9 @@
         <option :value="60000">1 min</option>
       </select>
       <button class="btn" @click="doRefresh">↺ Refresh</button>
-      <button class="btn" @click="downloadConfig">↓ Config</button>
+      <button class="btn" @click="downloadConfig(positions, lastRefresh, quoteMap)">
+        ↓ Config
+      </button>
       <button class="btn" @click="triggerUpload">↑ Config</button>
       <button class="btn accent" @click="openModal()">+ Position</button>
       <input
@@ -77,7 +79,12 @@
         <tr v-for="pos in activePositions" :key="pos.id">
           <td>
             <div class="name-cell">
-              <img v-if="pos.url" class="favicon" :src="faviconUrl(pos.url)" alt="" />
+              <img
+                v-if="pos.url"
+                class="favicon"
+                :src="faviconUrl(pos.url)"
+                alt=""
+              />
               <a
                 class="name-link"
                 :href="`https://www.tradegate.de/orderbuch.php?isin=${pos.isin}`"
@@ -104,8 +111,12 @@
             {{ fmt(getPnlEur(pos), 2, true) }}
           </td>
           <td>
-            <button class="icon-btn" @click="openModal(pos)">✎</button>
-            <button class="icon-btn" @click="deletePosition(pos.id)">✕</button>
+            <div class="row-actions">
+              <button class="icon-btn edit" @click="openModal(pos)">✎</button>
+              <button class="icon-btn del" @click="deletePosition(pos.id)">
+                ✕
+              </button>
+            </div>
           </td>
         </tr>
       </tbody>
@@ -141,7 +152,12 @@
         <tr v-for="p in archivedPositions" :key="p.id" class="sold">
           <td>
             <div class="name-cell">
-              <img v-if="p.url" class="favicon" :src="faviconUrl(p.url)" alt="" />
+              <img
+                v-if="p.url"
+                class="favicon"
+                :src="faviconUrl(p.url)"
+                alt=""
+              />
               <span>{{ p.name }}</span>
             </div>
           </td>
@@ -162,14 +178,16 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import { STORAGE_KEY, STORAGE_VERSION } from "./constants";
 import DialogAddPosition from "./DialogAddPosition.vue";
+import { downloadConfig } from "./storage";
 import { Position, Quote, StorageModel } from "./types";
 import {
+  faviconUrl,
   loadStorageModel,
   savePositions,
   saveStorageModel,
 } from "./utils";
-import { STORAGE_KEY, STORAGE_VERSION } from "./constants";
 
 const storageModel = loadStorageModel();
 const positions = ref<Position[]>(storageModel.positions);
@@ -219,10 +237,6 @@ watch(
 
 function quote(isin: string) {
   return quoteMap.value[isin];
-}
-
-function faviconUrl(url: string): string {
-  return `https://s2.googleusercontent.com/s2/favicons?domain_url=http://${url}`;
 }
 
 function fmt(
@@ -300,12 +314,13 @@ async function doRefresh(): Promise<void> {
 }
 
 function scheduleNext(): void {
-  if (intervalId.value) clearTimeout(intervalId.value);
-  if (intervalMs.value > 0)
-    intervalId.value = window.setTimeout(
-      () => void doRefresh(),
-      intervalMs.value,
-    );
+  if (intervalId.value) {
+    clearTimeout(intervalId.value);
+  }
+
+  if (intervalMs.value > 0) {
+    intervalId.value = window.setTimeout(doRefresh, intervalMs.value);
+  }
 }
 
 function openModal(position?: Position): void {
@@ -314,24 +329,6 @@ function openModal(position?: Position): void {
 
 function deletePosition(id: string): void {
   positions.value = positions.value.filter((p) => p.id !== id);
-}
-
-function downloadConfig(): void {
-  const model: StorageModel = {
-    version: STORAGE_VERSION,
-    positions: positions.value,
-    lastQuotes: quoteMap.value,
-    lastRefresh: lastRefresh.value,
-  };
-  const data = JSON.stringify(model, null, 2);
-  const blob = new Blob([data], { type: "application/json" });
-  const fileUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  link.href = fileUrl;
-  link.download = `portfolio-config-${stamp}.json`;
-  link.click();
-  URL.revokeObjectURL(fileUrl);
 }
 
 function triggerUpload(): void {
@@ -343,18 +340,22 @@ async function uploadConfig(event: Event): Promise<void> {
   const file = input.files?.[0];
   if (!file) return;
 
-  const text = await file.text();
+  const json = await file.text();
   let model: StorageModel;
 
   try {
-    model = JSON.parse(text) as StorageModel;
+    model = JSON.parse(json) as StorageModel;
   } catch {
     alert("Uploaded file is not valid JSON.");
     input.value = "";
     return;
   }
 
-  if (!window.confirm("Importing config will delete all current local data. Continue?")) {
+  if (
+    !window.confirm(
+      "Importing config will delete all current local data. Continue?",
+    )
+  ) {
     input.value = "";
     return;
   }
@@ -386,9 +387,7 @@ async function uploadConfig(event: Event): Promise<void> {
   await doRefresh();
 }
 
-onMounted(() => {
-  void doRefresh();
-});
+onMounted(doRefresh);
 </script>
 
 <style>
@@ -399,7 +398,8 @@ onMounted(() => {
   --border2: #2a2a3e;
   --text: #c8c8d8;
   --muted: #555570;
-  --accent: #4fc3f7;
+  --accent: #4ff757;
+  /* --accent: #4fc3f7; */
   --green: #4cff8f;
   --red: #ff4c6a;
   --yellow: #ffd166;
@@ -609,19 +609,6 @@ td:first-child {
   gap: 14px;
 }
 
-.form-full {
-  grid-column: 1 / -1;
-}
-
-.field label {
-  display: block;
-  font-size: var(--font-size-xxs);
-  color: var(--muted);
-  margin-bottom: 5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
 .field input {
   width: 100%;
   background: var(--bg);
@@ -670,5 +657,47 @@ td:first-child {
 
 .pill.green b {
   color: var(--green);
+}
+
+.row-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.icon-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--font-size-md);
+  padding: 2px 5px;
+  border-radius: 2px;
+  transition:
+    color 0.12s,
+    border-color 0.12s,
+    background 0.12s;
+  line-height: 1;
+}
+
+.icon-btn:hover {
+  color: var(--text);
+  border-color: var(--border2);
+  background: var(--border2);
+}
+
+.icon-btn.edit:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.icon-btn.del:hover {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+/* Ensure action buttons in table cells are properly aligned */
+td:last-child {
+  text-align: right;
 }
 </style>

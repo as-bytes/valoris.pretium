@@ -1,6 +1,2 @@
-[ ] - add dropdown for exchange selection in add positions dialog
-[ ] - add a checkbox (default is checked) in add positions dialog that will allow to add new value after pressing "Save" and will reset the form and keep the dialog open
-[ ] - when dialog checkbox for add new positions afterwards is checked the button "Cancel" becomes "Back", the button "Save" becomes "Add"
-[ ] - add download button that allows to download the full config (current and archived and last bids, ...) - the download should be a JSON with a version of the current localstorage-model (e.g. the current Storage-Key that is using a version number)
-[ ] - add button to upload full config with a confirm-warning dialog that all previous data will be deleted, if the data uploaded has another version that give a warning (that behaviour will be implemented in the future, if there is ever a version change in the data model of the local storage)
-[ ] - add favicons
+# DialogAddPosition.vue
+- no form validation, only an alert dialog. change to use form submit with validate and display validation errors in form instead of using alert
