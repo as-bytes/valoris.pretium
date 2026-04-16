@@ -1,7 +1,7 @@
 <template>
   <header>
     <div class="header-left">
-      <div class="logo">PORT<span>FOLIO</span></div>
+      <div class="logo">Valoris<span>Pretium</span></div>
       <div class="summary-pills">
         <span class="pill"
           ><b>{{ activePositions.length }}</b> positions</span
@@ -144,10 +144,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import DialogAddPosition from "./DialogAddPosition.vue";
 import { Position, Quote } from "./types";
-import { createEmptyPosition, loadPositions, savePositions } from "./utils";
+import { loadPositions, savePositions } from "./utils";
 
 const positions = ref<Position[]>(loadPositions());
 const quoteMap = ref<Record<string, Quote>>({});
@@ -252,7 +252,7 @@ function scheduleNext(): void {
 }
 
 function openModal(position?: Position): void {
-  showAddDialog.value = position ? position.id : '';
+  showAddDialog.value = position ? position.id : "";
 }
 
 function deletePosition(id: string): void {
