@@ -1,17 +1,11 @@
-import { STORAGE_KEY } from "./constants";
-import { Position } from "./types";
+import { STORAGE_KEY, STORAGE_VERSION } from "./constants";
+import { NewPosition, Position, StorageModel } from "./types";
 
 export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
-export function savePositions(positions: Position[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(positions));
-}
-
-export function loadPositions(): Position[] {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw) return JSON.parse(raw);
+function defaultPositions(): Position[] {
   return [
     {
       id: uid(),
@@ -28,17 +22,82 @@ export function loadPositions(): Position[] {
   ];
 }
 
+export function createStorageModel(
+  positions: Position[] = defaultPositions(),
+): StorageModel {
+  return {
+    version: STORAGE_VERSION,
+    positions,
+    lastQuotes: {},
+    lastRefresh: "",
+  };
+}
+
+export function saveStorageModel(model: StorageModel) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(model));
+}
+
+export function loadStorageModel(): StorageModel {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) {
+    return createStorageModel();
+  }
+
+  const parsed = JSON.parse(raw) as StorageModel | Position[];
+
+  if (Array.isArray(parsed)) {
+    return createStorageModel(parsed);
+  }
+
+  return {
+    version: parsed.version || STORAGE_VERSION,
+    positions: parsed.positions || defaultPositions(),
+    lastQuotes: parsed.lastQuotes || {},
+    lastRefresh: parsed.lastRefresh || "",
+  };
+}
+
+export function savePositions(positions: Position[]) {
+  const existing = loadStorageModel();
+  saveStorageModel({ ...existing, positions });
+}
+
+export function loadPositions(): Position[] {
+  return loadStorageModel().positions;
+}
+
 export function createEmptyPosition(): Position {
   return {
     id: "",
     name: "",
     url: "",
     isin: "",
-    exchange: "",
+    exchange: "SC",
     amount: 0,
     rate: 0,
-    want: null as number | null,
+    want: null,
     sold: false,
     hide: false,
   };
+}
+
+export function createNewPosition(): NewPosition {
+  return {
+    id: "",
+    name: null,
+    url: null,
+    isin: null,
+    exchange: null,
+    amount: null,
+    rate: null,
+    want: null,
+    sold: false,
+    hide: false,
+  };
+}
+
+export function faviconUrl(url: string | null): string {
+  return url
+    ? `https://s2.googleusercontent.com/s2/favicons?domain_url=http://${url}`
+    : "";
 }
