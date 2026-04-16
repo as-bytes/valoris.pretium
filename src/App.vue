@@ -21,7 +21,16 @@
         <option :value="60000">1 min</option>
       </select>
       <button class="btn" @click="doRefresh">↺ Refresh</button>
+      <button class="btn" @click="downloadConfig">↓ Config</button>
+      <button class="btn" @click="triggerUpload">↑ Config</button>
       <button class="btn accent" @click="openModal()">+ Position</button>
+      <input
+        ref="uploadInput"
+        type="file"
+        accept="application/json"
+        class="hidden-upload"
+        @change="uploadConfig"
+      />
     </div>
   </header>
 
@@ -67,12 +76,15 @@
       <tbody>
         <tr v-for="pos in activePositions" :key="pos.id">
           <td>
-            <a
-              class="name-link"
-              :href="`https://www.tradegate.de/orderbuch.php?isin=${pos.isin}`"
-              target="_blank"
-              >{{ pos.name }}</a
-            >
+            <div class="name-cell">
+              <img v-if="pos.url" class="favicon" :src="faviconUrl(pos.url)" alt="" />
+              <a
+                class="name-link"
+                :href="`https://www.tradegate.de/orderbuch.php?isin=${pos.isin}`"
+                target="_blank"
+                >{{ pos.name }}</a
+              >
+            </div>
           </td>
           <td>
             <span class="exchange-badge">{{ pos.exchange }}</span>
@@ -127,7 +139,12 @@
       </thead>
       <tbody>
         <tr v-for="p in archivedPositions" :key="p.id" class="sold">
-          <td>{{ p.name }}</td>
+          <td>
+            <div class="name-cell">
+              <img v-if="p.url" class="favicon" :src="faviconUrl(p.url)" alt="" />
+              <span>{{ p.name }}</span>
+            </div>
+          </td>
           <td>{{ p.exchange }}</td>
           <td>{{ fmt(p.rate) }}</td>
           <td>{{ quote(p.isin)?.bid ? fmt(quote(p.isin)?.bid || 0) : "–" }}</td>
@@ -144,19 +161,26 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import DialogAddPosition from "./DialogAddPosition.vue";
-import { Position, Quote } from "./types";
-import { loadPositions, savePositions } from "./utils";
+import { Position, Quote, StorageModel } from "./types";
+import {
+  loadStorageModel,
+  savePositions,
+  saveStorageModel,
+} from "./utils";
+import { STORAGE_KEY, STORAGE_VERSION } from "./constants";
 
-const positions = ref<Position[]>(loadPositions());
-const quoteMap = ref<Record<string, Quote>>({});
+const storageModel = loadStorageModel();
+const positions = ref<Position[]>(storageModel.positions);
+const quoteMap = ref<Record<string, Quote>>(storageModel.lastQuotes || {});
 const intervalMs = ref(0);
 const intervalId = ref<number>();
 const refreshing = ref(false);
 const currentView = ref<"list" | "charts" | "archive">("list");
-const lastRefresh = ref("");
+const lastRefresh = ref(storageModel.lastRefresh || "");
 const now = ref(Date.now());
+const uploadInput = ref<HTMLInputElement | null>(null);
 
 const showAddDialog = ref<string | null>(null);
 const activePositions = computed(() =>
@@ -167,8 +191,38 @@ const totalPnl = computed(() =>
   activePositions.value.reduce((sum, p) => sum + (getPnlEur(p) || 0), 0),
 );
 
+function persistStorageModel() {
+  const model: StorageModel = {
+    version: STORAGE_VERSION,
+    positions: positions.value,
+    lastQuotes: quoteMap.value,
+    lastRefresh: lastRefresh.value,
+  };
+  saveStorageModel(model);
+}
+
+watch(
+  positions,
+  () => {
+    savePositions(positions.value);
+  },
+  { deep: true },
+);
+
+watch(
+  [quoteMap, lastRefresh],
+  () => {
+    persistStorageModel();
+  },
+  { deep: true },
+);
+
 function quote(isin: string) {
   return quoteMap.value[isin];
+}
+
+function faviconUrl(url: string): string {
+  return `https://s2.googleusercontent.com/s2/favicons?domain_url=http://${url}`;
 }
 
 function fmt(
@@ -218,9 +272,12 @@ function getPnlEur(p: Position): number | null {
   return p.amount * (bid - p.rate);
 }
 
-window.addEventListener("storage", (event) => {
-  console.log(event.key, event.newValue);
-  doRefresh();
+window.addEventListener("storage", () => {
+  const model = loadStorageModel();
+  positions.value = model.positions;
+  quoteMap.value = model.lastQuotes;
+  lastRefresh.value = model.lastRefresh;
+  void doRefresh();
 });
 
 async function doRefresh(): Promise<void> {
@@ -257,7 +314,76 @@ function openModal(position?: Position): void {
 
 function deletePosition(id: string): void {
   positions.value = positions.value.filter((p) => p.id !== id);
-  savePositions(positions.value);
+}
+
+function downloadConfig(): void {
+  const model: StorageModel = {
+    version: STORAGE_VERSION,
+    positions: positions.value,
+    lastQuotes: quoteMap.value,
+    lastRefresh: lastRefresh.value,
+  };
+  const data = JSON.stringify(model, null, 2);
+  const blob = new Blob([data], { type: "application/json" });
+  const fileUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  link.href = fileUrl;
+  link.download = `portfolio-config-${stamp}.json`;
+  link.click();
+  URL.revokeObjectURL(fileUrl);
+}
+
+function triggerUpload(): void {
+  uploadInput.value?.click();
+}
+
+async function uploadConfig(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  const text = await file.text();
+  let model: StorageModel;
+
+  try {
+    model = JSON.parse(text) as StorageModel;
+  } catch {
+    alert("Uploaded file is not valid JSON.");
+    input.value = "";
+    return;
+  }
+
+  if (!window.confirm("Importing config will delete all current local data. Continue?")) {
+    input.value = "";
+    return;
+  }
+
+  if (model.version !== STORAGE_VERSION) {
+    const proceed = window.confirm(
+      `Uploaded config version (${model.version || "unknown"}) differs from current version (${STORAGE_VERSION}). Continue anyway?`,
+    );
+    if (!proceed) {
+      input.value = "";
+      return;
+    }
+  }
+
+  localStorage.removeItem(STORAGE_KEY);
+  saveStorageModel({
+    version: model.version || STORAGE_VERSION,
+    positions: model.positions || [],
+    lastQuotes: model.lastQuotes || {},
+    lastRefresh: model.lastRefresh || "",
+  });
+
+  const latest = loadStorageModel();
+  positions.value = latest.positions;
+  quoteMap.value = latest.lastQuotes;
+  lastRefresh.value = latest.lastRefresh;
+  now.value = Date.now();
+  input.value = "";
+  await doRefresh();
 }
 
 onMounted(() => {
@@ -417,12 +543,39 @@ td:first-child {
   font-weight: 500;
 }
 
+.name-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.favicon {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.exchange-badge {
+  font-size: var(--font-size-xxs);
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+}
+
 .pos {
   color: var(--green);
 }
 
 .neg {
   color: var(--red);
+}
+
+.hidden-upload {
+  display: none;
 }
 
 .modal-backdrop {
@@ -517,518 +670,5 @@ td:first-child {
 
 .pill.green b {
   color: var(--green);
-}
-
-.pill.red b {
-  color: var(--red);
-}
-
-.spinner {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border: 2px solid var(--border2);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-  vertical-align: middle;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.exchange-badge {
-  font-size: 9px;
-  color: var(--muted);
-  letter-spacing: 0.06em;
-  padding: 1px 5px;
-  border: 1px solid var(--border2);
-  border-radius: 2px;
-}
-
-thead th {
-  font-size: var(--font-size-xxs);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--border2);
-  white-space: nowrap;
-  cursor: pointer;
-  user-select: none;
-  text-align: right;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-}
-
-.summary-pills {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.pill b {
-  color: var(--text);
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.btn:hover {
-  background: var(--border2);
-  color: #fff;
-}
-
-.btn.accent:hover {
-  background: var(--accent);
-  color: #000;
-}
-
-.btn.danger {
-  border-color: var(--red);
-  color: var(--red);
-}
-
-.btn.danger:hover {
-  background: var(--red);
-  color: #fff;
-}
-
-.btn.sm {
-  font-size: var(--font-size-xxs);
-  padding: 3px 8px;
-}
-
-select.btn {
-  appearance: none;
-  padding-right: 20px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23555570'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 6px center;
-}
-
-.tab:hover {
-  color: var(--text);
-}
-
-thead th:first-child,
-thead th:nth-child(2) {
-  text-align: left;
-}
-
-thead th:hover {
-  color: var(--text);
-}
-
-thead th.sorted {
-  color: var(--accent);
-}
-
-tbody tr {
-  border-bottom: 1px solid var(--border);
-  transition: background 0.1s;
-}
-
-tbody tr:hover td,
-tbody tr:hover th {
-  background: #14141f !important;
-}
-
-tbody td,
-tbody th {
-  padding: 7px 14px;
-  white-space: nowrap;
-  text-align: right;
-  font-weight: 400;
-}
-
-tbody td:first-child,
-tbody th:first-child {
-  text-align: left;
-}
-
-tr.sold td,
-tr.sold th {
-  opacity: 0.45;
-  background: var(--sold-bg);
-}
-
-tr.sold:hover td,
-tr.sold:hover th {
-  opacity: 0.7;
-}
-
-tr.want-below td,
-tr.want-below th {
-  background: var(--want-hit-red);
-}
-
-tr.want-above td,
-tr.want-above th {
-  background: var(--want-hit-green);
-}
-
-.flash-cell {
-  animation: flashPulse 0.35s ease-out;
-}
-
-@keyframes flashPulse {
-  0% {
-    background: rgba(79, 195, 247, 0.35);
-  }
-  100% {
-    background: transparent;
-  }
-}
-
-.name-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 160px;
-}
-
-.favicon {
-  width: 14px;
-  height: 14px;
-  background: white;
-  border-radius: 2px;
-  flex-shrink: 0;
-  object-fit: contain;
-}
-
-.name-link:hover {
-  text-decoration: underline;
-}
-
-.name-link.line-through {
-  text-decoration: line-through;
-  color: var(--muted);
-}
-
-.neu {
-  color: var(--text);
-}
-
-.dim {
-  color: var(--muted);
-}
-
-.chart-row td {
-  padding: 0;
-  background: #0c0c14 !important;
-}
-
-.chart-row img {
-  display: block;
-  opacity: 0.85;
-  transition: opacity 0.2s;
-  max-width: 100%;
-}
-
-.chart-row img:hover {
-  opacity: 1;
-}
-
-.chart-imgs {
-  display: flex;
-  gap: 4px;
-  padding: 6px 14px;
-  flex-wrap: wrap;
-}
-
-.row-actions {
-  display: flex;
-  gap: 4px;
-  justify-content: flex-end;
-}
-
-.icon-btn {
-  background: none;
-  border: 1px solid transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-  padding: 2px 5px;
-  border-radius: 2px;
-  transition:
-    color 0.12s,
-    border-color 0.12s,
-    background 0.12s;
-  line-height: 1;
-}
-
-.icon-btn:hover {
-  color: var(--text);
-  border-color: var(--border2);
-  background: var(--border2);
-}
-
-.icon-btn.edit:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.icon-btn.del:hover {
-  color: var(--red);
-  border-color: var(--red);
-}
-
-.modal h2 {
-  font-size: var(--font-size-sm);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--accent);
-  margin-bottom: 20px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border2);
-}
-
-.field input,
-.field select {
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border2);
-  color: var(--text);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: var(--font-size-md);
-  padding: 7px 10px;
-  border-radius: 2px;
-  outline: none;
-  transition: border-color 0.15s;
-}
-
-.field input:focus,
-.field select:focus {
-  border-color: var(--accent);
-}
-
-.field input::placeholder {
-  color: var(--muted);
-}
-
-.field-hint {
-  font-size: var(--font-size-xxs);
-  color: var(--muted);
-  margin-top: 4px;
-}
-
-.checkbox-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--muted);
-  font-size: var(--font-size-xs);
-}
-
-.checkbox-row input[type="checkbox"] {
-  width: auto;
-  cursor: pointer;
-  accent-color: var(--accent);
-}
-
-footer {
-  padding: 10px 24px;
-  border-top: 1px solid var(--border2);
-  font-size: var(--font-size-xxs);
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-footer .alerts-box {
-  flex: 1;
-  font-size: var(--font-size-xxs);
-  color: var(--green);
-  background: #001a08;
-  border: 1px solid #003015;
-  padding: 4px 10px;
-  border-radius: 2px;
-  max-height: 60px;
-  overflow-y: auto;
-}
-
-.section-header td {
-  font-size: var(--font-size-xxxs);
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--muted);
-  padding: 10px 14px 4px;
-  background: var(--bg) !important;
-  border-top: 1px solid var(--border2);
-}
-
-.totals-row td {
-  font-weight: 500;
-  border-top: 1px solid var(--border2);
-  font-size: var(--font-size-md);
-}
-
-.empty-state {
-  text-align: center;
-  padding: 60px 20px;
-  color: var(--muted);
-}
-
-.empty-state .big {
-  font-size: var(--font-size-xxl);
-  margin-bottom: 10px;
-}
-
-.empty-state p {
-  font-size: var(--font-size-xs);
-  margin-top: 6px;
-}
-
-input[type="radio"] {
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.last-refresh {
-  font-size: var(--font-size-xxs);
-  color: var(--muted);
-}
-
-[title] {
-  cursor: help;
-}
-
-.chart-card-name {
-  font-weight: 500;
-  font-size: var(--font-size-md);
-  color: var(--accent);
-}
-
-.chart-card-meta {
-  font-size: var(--font-size-xxs);
-  color: var(--muted);
-}
-
-.chart-card img {
-  width: 100%;
-  display: block;
-}
-
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--bg);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border2);
-  border-radius: 2px;
-}
-
-.mic-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 1px solid var(--border2);
-  background: var(--bg);
-  color: var(--muted);
-  cursor: pointer;
-  font-size: var(--font-size-xl);
-  transition: all 0.15s;
-  flex-shrink: 0;
-}
-
-.mic-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.mic-btn.listening {
-  border-color: var(--red);
-  color: var(--red);
-  animation: micPulse 1s ease-in-out infinite;
-}
-
-@keyframes micPulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(255, 76, 106, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 0 6px rgba(255, 76, 106, 0);
-  }
-}
-
-.voice-status {
-  font-size: var(--font-size-xxs);
-  color: var(--muted);
-  padding: 5px 0 0;
-  min-height: 16px;
-  font-style: italic;
-  letter-spacing: 0.04em;
-}
-
-.voice-status.active {
-  color: var(--red);
-}
-
-.voice-status.ok {
-  color: var(--green);
-}
-
-.voice-status.err {
-  color: var(--yellow);
-}
-
-.voice-transcript {
-  font-size: var(--font-size-xxs);
-  color: var(--muted);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  padding: 5px 8px;
-  margin-top: 6px;
-  min-height: 28px;
-  word-break: break-all;
-  display: none;
-}
-
-.modal-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 20px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border2);
-}
-
-.modal-header-row h2 {
-  margin: 0;
-  padding: 0;
-  border: none;
-  font-size: var(--font-size-sm);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--accent);
 }
 </style>

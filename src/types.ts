@@ -12,3 +12,10 @@ export type Position = {
 };
 
 export type Quote = { isin: string; bid: number | null; change: number | null };
+
+export type StorageModel = {
+  version: string;
+  positions: Position[];
+  lastQuotes: Record<string, Quote>;
+  lastRefresh: string;
+};
