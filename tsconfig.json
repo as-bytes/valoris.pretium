@@ -8,8 +8,22 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "esModuleInterop": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node"]
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src/**/*.ts", "src/**/*.vue", "backend/**/*.ts", "vercel/**/*.ts", "cloudflare/**/*.ts", "firebase/functions/src/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.vue",
+    "backend/**/*.ts",
+    "vercel/**/*.ts",
+    "cloudflare/**/*.ts",
+    "firebase/functions/src/**/*.ts",
+    "api/quotes.ts"
+  ]
 }

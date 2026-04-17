@@ -14,14 +14,17 @@
     <div class="header-right">
       <span class="last-refresh">{{ lastRefresh || "–" }}</span>
       <span v-if="refreshing" class="spinner"></span>
-      <select v-model.number="intervalMs" class="btn" @change="scheduleNext">
+      <select v-model.number="intervalMs" class="btn" @change="scheduleNext()">
         <option :value="0">off</option>
         <option :value="15000">15 s</option>
         <option :value="30000">30 s</option>
         <option :value="60000">1 min</option>
       </select>
-      <button class="btn" @click="doRefresh">↺ Refresh</button>
-      <button class="btn" @click="downloadConfig(positions, lastRefresh, quoteMap)">
+      <button class="btn" @click="doRefreshAll">↺ Refresh</button>
+      <button
+        class="btn"
+        @click="downloadConfig(positions, lastRefresh, quoteMap)"
+      >
         ↓ Config
       </button>
       <button class="btn" @click="triggerUpload">↑ Config</button>
@@ -112,6 +115,12 @@
           </td>
           <td>
             <div class="row-actions">
+              <button
+                class="icon-btn refresh"
+                @click="doRefreshSingle(pos.isin)"
+              >
+                ↺
+              </button>
               <button class="icon-btn edit" @click="openModal(pos)">✎</button>
               <button class="icon-btn del" @click="deletePosition(pos.id)">
                 ✕
@@ -146,28 +155,37 @@
           <th>Exchange</th>
           <th>Buy</th>
           <th>Last Bid</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="p in archivedPositions" :key="p.id" class="sold">
+        <tr v-for="pos in archivedPositions" :key="pos.id" class="sold">
           <td>
             <div class="name-cell">
-              <img
-                v-if="p.url"
-                class="favicon"
-                :src="faviconUrl(p.url)"
-                alt=""
-              />
-              <span>{{ p.name }}</span>
+              <span>{{ pos.name }}</span>
             </div>
           </td>
-          <td>{{ p.exchange }}</td>
-          <td>{{ fmt(p.rate) }}</td>
-          <td>{{ quote(p.isin)?.bid ? fmt(quote(p.isin)?.bid || 0) : "–" }}</td>
+          <td>{{ pos.exchange }}</td>
+          <td>{{ fmt(pos.rate) }}</td>
+          <td>
+            {{ quote(pos.isin)?.bid ? fmt(quote(pos.isin)?.bid || 0) : "–" }}
+          </td>
+          <td>
+            <button class="icon-btn del" @click="deletePosition(pos.id)">
+              ✕
+            </button>
+          </td>
         </tr>
       </tbody>
     </table>
   </main>
+
+  <div class="test-data">
+    <hr size="1" />
+    <button class="btn" v-if="positions.length === 0" @click="loadTestData">
+      load test data
+    </button>
+  </div>
 
   <DialogAddPosition
     v-if="showAddDialog !== null"
@@ -177,7 +195,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { STORAGE_KEY, STORAGE_VERSION } from "./constants";
 import DialogAddPosition from "./DialogAddPosition.vue";
 import { downloadConfig } from "./storage";
@@ -291,10 +309,22 @@ window.addEventListener("storage", () => {
   positions.value = model.positions;
   quoteMap.value = model.lastQuotes;
   lastRefresh.value = model.lastRefresh;
-  void doRefresh();
+  scheduleNext();
 });
 
-async function doRefresh(): Promise<void> {
+function updateTitle() {
+  if (totalPnl.value === 0) {
+    document.title = "ValorisPretium";
+  } else {
+    const title =
+      totalPnl.value > 0
+        ? `+${fmt(totalPnl.value, 2, true)}`
+        : fmt(totalPnl.value, 2, true);
+    document.title = title;
+  }
+}
+
+async function doRefreshAll(): Promise<void> {
   refreshing.value = true;
   try {
     const isins = [
@@ -308,18 +338,39 @@ async function doRefresh(): Promise<void> {
     lastRefresh.value = new Date().toLocaleTimeString("de-DE");
     now.value = Date.now();
   } finally {
+    updateTitle();
     refreshing.value = false;
     scheduleNext();
   }
 }
 
-function scheduleNext(): void {
+async function doRefreshSingle(isin: string): Promise<void> {
+  refreshing.value = true;
+  try {
+    const url = `/api/quotes?isins=${encodeURIComponent(isin)}`;
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) return;
+    const data = (await response.json()) as { quotes: Record<string, Quote> };
+
+    quoteMap.value[isin] = data.quotes[isin];
+    now.value = Date.now();
+  } finally {
+    updateTitle();
+    refreshing.value = false;
+  }
+}
+
+function scheduleNext(now = false): void {
   if (intervalId.value) {
     clearTimeout(intervalId.value);
   }
 
   if (intervalMs.value > 0) {
-    intervalId.value = window.setTimeout(doRefresh, intervalMs.value);
+    intervalId.value = window.setTimeout(doRefreshAll, intervalMs.value);
+  }
+
+  if (now) {
+    doRefreshAll();
   }
 }
 
@@ -328,6 +379,10 @@ function openModal(position?: Position): void {
 }
 
 function deletePosition(id: string): void {
+  positions.value = positions.value.filter((p) => p.id !== id);
+}
+
+function refreshQuote(id: string): void {
   positions.value = positions.value.filter((p) => p.id !== id);
 }
 
@@ -384,10 +439,64 @@ async function uploadConfig(event: Event): Promise<void> {
   lastRefresh.value = latest.lastRefresh;
   now.value = Date.now();
   input.value = "";
-  await doRefresh();
+
+  scheduleNext();
 }
 
-onMounted(doRefresh);
+function loadTestData() {
+  positions.value = [
+    {
+      isin: "DE0007164600",
+      amount: 12,
+      exchange: "ING",
+      hide: false,
+      id: "SAP",
+      name: "SAP",
+      rate: 159,
+      sold: false,
+      url: "sap.com",
+      want: null,
+    },
+    {
+      isin: "US5949181045",
+      amount: 5,
+      exchange: "DKB",
+      hide: false,
+      id: "Microsoft",
+      name: "Microsoft",
+      rate: 330,
+      sold: false,
+      url: "microsoft.com",
+      want: null,
+    },
+    {
+      isin: "DE0008232125",
+      amount: 5,
+      exchange: "DKB",
+      hide: false,
+      id: "Lufthansa",
+      name: "Lufthansa ",
+      rate: 7.6,
+      sold: true,
+      url: "lufthansa.com",
+      want: null,
+    },
+    {
+      isin: "IE00B0M62Q58",
+      amount: 5,
+      exchange: "ING",
+      hide: true,
+      id: "MSCI World",
+      name: "MSCI World ",
+      rate: 80.6,
+      sold: true,
+      url: "ishares.com",
+      want: null,
+    },
+  ];
+}
+
+// onMounted(scheduleNext);
 </script>
 
 <style>
@@ -397,7 +506,7 @@ onMounted(doRefresh);
   --border: #1e1e2e;
   --border2: #2a2a3e;
   --text: #c8c8d8;
-  --muted: #555570;
+  --muted: #747497;
   --accent: #4ff757;
   /* --accent: #4fc3f7; */
   --green: #4cff8f;
@@ -655,6 +764,10 @@ td:first-child {
   white-space: nowrap;
 }
 
+.pill b:nth-child(1) {
+  color: var(--text);
+}
+
 .pill.green b {
   color: var(--green);
 }
@@ -699,5 +812,16 @@ td:first-child {
 /* Ensure action buttons in table cells are properly aligned */
 td:last-child {
   text-align: right;
+}
+
+.test-data {
+  text-align: center;
+}
+.test-data .btn {
+  margin-top: 10px;
+}
+
+tr.sold > td {
+  text-decoration: line-through;
 }
 </style>
