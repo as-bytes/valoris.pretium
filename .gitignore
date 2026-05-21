@@ -7,3 +7,4 @@ firebase-debug.log
 .vercel/
 .vercel
 .env*.local
+tsconfig.tsbuildinfo

@@ -68,12 +68,13 @@
       <thead>
         <tr>
           <th>Name</th>
-          <th>Exch.</th>
-          <th>Buy</th>
-          <th>Want</th>
+          <th class="wide-only">Exch.</th>
+          <th class="wide-only">Buy-In</th>
+          <th class="wide-only">Want</th>
           <th>Current</th>
           <th>Today</th>
           <th>%P&amp;L</th>
+          <th class="wide-only">Invested</th>
           <th>Value</th>
           <th>Actions</th>
         </tr>
@@ -96,11 +97,11 @@
               >
             </div>
           </td>
-          <td>
-            <span class="exchange-badge">{{ pos.exchange }}</span>
+          <td class="wide-only">
+            <span class="exchange-badge" v-if="pos.exchange">{{ pos.exchange }}</span>
           </td>
-          <td>{{ fmt(pos.rate) }}</td>
-          <td>{{ pos.want ? fmt(pos.want) : "–" }}</td>
+          <td class="wide-only">{{ fmt(pos.rate) }}</td>
+          <td class="wide-only">{{ pos.want ? fmt(pos.want) : "–" }}</td>
           <td>
             {{ quote(pos.isin)?.bid ? fmt(quote(pos.isin)?.bid || 0) : "–" }}
           </td>
@@ -110,6 +111,7 @@
           <td :class="colorClass(getProfit(pos))">
             {{ fmtPct(getProfit(pos)) }}
           </td>
+          <td class="wide-only">{{ fmt(pos.amount * pos.rate, 2, true) }}</td>
           <td :class="colorClass(getPnlEur(pos))">
             {{ fmt(getPnlEur(pos), 2, true) }}
           </td>
@@ -152,8 +154,8 @@
       <thead>
         <tr>
           <th>Name</th>
-          <th>Exchange</th>
-          <th>Buy</th>
+          <th class="wide-only">Exchange</th>
+          <th class="wide-only">Buy-In</th>
           <th>Last Bid</th>
           <th>Actions</th>
         </tr>
@@ -165,8 +167,8 @@
               <span>{{ pos.name }}</span>
             </div>
           </td>
-          <td>{{ pos.exchange }}</td>
-          <td>{{ fmt(pos.rate) }}</td>
+          <td class="wide-only">{{ pos.exchange }}</td>
+          <td class="wide-only">{{ fmt(pos.rate) }}</td>
           <td>
             {{ quote(pos.isin)?.bid ? fmt(quote(pos.isin)?.bid || 0) : "–" }}
           </td>
@@ -284,7 +286,7 @@ function fmt(
 
 function fmtPct(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "–";
-  return `${value > 0 ? "+" : ""}${value.toFixed(2)} %`;
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}\u00A0%`;
 }
 
 function colorClass(value: number | null | undefined): string {
@@ -823,5 +825,24 @@ td:last-child {
 
 tr.sold > td {
   text-decoration: line-through;
+}
+
+.wide-only {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  th.wide-only,
+  td.wide-only {
+    display: table-cell !important;
+  }
+}
+
+tbody tr {
+  transition: background-color 0.12s ease;
+}
+
+tbody tr:hover {
+  background-color: var(--border);
 }
 </style>

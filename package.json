@@ -3,6 +3,26 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "engineStrict": true,
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "dependencies": {
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.14",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "concurrently": "^9.1.2",
+    "firebase-admin": "^13.4.0",
+    "firebase-functions": "^6.3.2",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3",
+    "vercel": "^51.6.1",
+    "vite": "^6.3.2",
+    "vue-tsc": "^3.2.6",
+    "wrangler": "^4.10.0"
+  },
   "scripts": {
     "dev": "concurrently \"npm:dev:api\" \"npm:dev:web\"",
     "dev:web": "vite",
@@ -20,21 +40,5 @@
     "npm:audit": "npm audit",
     "npm:audit:fix": "npm audit fix",
     "npm:install": "npm install"
-  },
-  "dependencies": {
-    "vue": "^3.5.13"
-  },
-  "devDependencies": {
-    "@types/node": "^22.13.14",
-    "@vitejs/plugin-vue": "^5.2.1",
-    "concurrently": "^9.1.2",
-    "firebase-admin": "^13.4.0",
-    "firebase-functions": "^6.3.2",
-    "tsx": "^4.19.3",
-    "typescript": "^5.8.3",
-    "vercel": "^51.6.1",
-    "vite": "^6.3.2",
-    "vue-tsc": "^3.2.6",
-    "wrangler": "^4.10.0"
   }
 }

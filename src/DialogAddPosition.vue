@@ -9,21 +9,26 @@
         {{ formPosition.id !== "" ? "Edit Position" : "Add Position" }}
       </h2>
       <div class="form-grid">
-        <div class="field form-half">
-          <label>NAME</label>
-          <input v-model="formPosition.name" placeholder="SAP" />
-        </div>
+        <div class="name-url-row form-full">
+          <div class="field flex-1">
+            <label>NAME</label>
+            <input v-model="formPosition.name" placeholder="SAP" />
+          </div>
 
-        <div class="field">
-          <label>URL <span class="muted">(fav-icon)</span></label>
-          <input v-model="formPosition.url" placeholder="sap.com" />
+          <div class="favicon-spacer">
+            <img
+              v-if="validUrl(formPosition.url)"
+              class="favicon"
+              :src="faviconUrl(formPosition.url)"
+              alt=""
+            />
+          </div>
+
+          <div class="field flex-1">
+            <label>URL <span class="muted">(fav-icon)</span></label>
+            <input v-model="formPosition.url" placeholder="sap.com" />
+          </div>
         </div>
-        <img
-          v-if="validUrl(formPosition.url)"
-          class="favicon"
-          :src="faviconUrl(formPosition.url)"
-          alt=""
-        />
 
         <div class="field">
           <label>ISIN</label>
@@ -31,15 +36,18 @@
         </div>
         <div class="field">
           <label>EXCHANGE-TAG</label>
-          <select v-model="formPosition.exchange">
+          <input
+            v-model="formPosition.exchange"
+            list="exchange-list"
+            placeholder="FinZero"
+          />
+          <datalist id="exchange-list">
             <option
               v-for="exchange in exchanges"
               :key="exchange"
               :value="exchange"
-            >
-              {{ exchange }}
-            </option>
-          </select>
+            />
+          </datalist>
           <div class="field-hint">(FinZero, TradRep, DKB, ING…)</div>
         </div>
 
@@ -84,7 +92,7 @@
             {{ addAnotherAfterSave ? "Close" : "Cancel" }}
           </button>
           <button class="btn accent" @click="savePosition">
-            {{ addAnotherAfterSave ? "Add" : "Save" }}
+            {{ formPosition.id !== "" ? "Edit" : (addAnotherAfterSave ? "Add" : "Save") }}
           </button>
         </div>
       </div>
@@ -128,11 +136,15 @@ watch(
 
     if (value === "") {
       resetFormPosition();
+      addAnotherAfterSave.value = true;
       return;
     }
 
     const editing = positions.value.find((position) => position.id === value);
     formPosition.value = editing ? { ...editing } : createEmptyPosition();
+    if (editing) {
+      addAnotherAfterSave.value = false;
+    }
   },
   { immediate: true },
 );
@@ -295,5 +307,31 @@ select:focus {
 
 .form-half {
   grid-column: 1 / -2;
+}
+
+.name-url-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.favicon-spacer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 34px;
+  flex-shrink: 0;
+}
+
+.favicon-spacer img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  border-radius: 2px;
 }
 </style>
