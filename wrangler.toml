@@ -1,0 +1,4 @@
+name = "valoris-pretium"
+main = "cloudflare/worker.ts"
+compatibility_date = "2026-04-16"
+workers_dev = true

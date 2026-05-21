@@ -1,0 +1,2 @@
+# DialogAddPosition.vue
+- no form validation, only an alert dialog. change to use form submit with validate and display validation errors in form instead of using alert
