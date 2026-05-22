@@ -27,15 +27,8 @@
       >
         ↓ Config
       </button>
-      <button class="btn" @click="triggerUpload">↑ Config</button>
+      <button class="btn" @click="showImportDialog = true">↑ Config</button>
       <button class="btn accent" @click="openModal()">+ Position</button>
-      <input
-        ref="uploadInput"
-        type="file"
-        accept="application/json"
-        class="hidden-upload"
-        @change="uploadConfig"
-      />
     </div>
   </header>
 
@@ -194,12 +187,15 @@
     v-model:add-or-edit="showAddDialog"
     v-model:positions="positions"
   />
+
+  <DialogImport v-model:show="showImportDialog" @import="handleImport" />
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { STORAGE_KEY, STORAGE_VERSION } from "./constants";
 import DialogAddPosition from "./DialogAddPosition.vue";
+import DialogImport from "./DialogImport.vue";
 import { downloadConfig } from "./storage";
 import { Position, Quote, StorageModel } from "./types";
 import {
@@ -218,9 +214,9 @@ const refreshing = ref(false);
 const currentView = ref<"list" | "charts" | "archive">("list");
 const lastRefresh = ref(storageModel.lastRefresh || "");
 const now = ref(Date.now());
-const uploadInput = ref<HTMLInputElement | null>(null);
 
 const showAddDialog = ref<string | null>(null);
+const showImportDialog = ref(false);
 const sortKey = ref<string | null>(null);
 const sortAsc = ref(true);
 
@@ -442,61 +438,15 @@ function refreshQuote(id: string): void {
   positions.value = positions.value.filter((p) => p.id !== id);
 }
 
-function triggerUpload(): void {
-  uploadInput.value?.click();
-}
-
-async function uploadConfig(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
-
-  const json = await file.text();
-  let model: StorageModel;
-
-  try {
-    model = JSON.parse(json) as StorageModel;
-  } catch {
-    alert("Uploaded file is not valid JSON.");
-    input.value = "";
-    return;
-  }
-
-  if (
-    !window.confirm(
-      "Importing config will delete all current local data. Continue?",
-    )
-  ) {
-    input.value = "";
-    return;
-  }
-
-  if (model.version !== STORAGE_VERSION) {
-    const proceed = window.confirm(
-      `Uploaded config version (${model.version || "unknown"}) differs from current version (${STORAGE_VERSION}). Continue anyway?`,
-    );
-    if (!proceed) {
-      input.value = "";
-      return;
+function handleImport(payload: { positions: Position[]; additive: boolean }) {
+  if (payload.additive) {
+    positions.value = [...positions.value, ...payload.positions];
+  } else {
+    if (confirm("Importing config will delete all current local data. Continue?")) {
+      positions.value = payload.positions;
     }
   }
-
-  localStorage.removeItem(STORAGE_KEY);
-  saveStorageModel({
-    version: model.version || STORAGE_VERSION,
-    positions: model.positions || [],
-    lastQuotes: model.lastQuotes || {},
-    lastRefresh: model.lastRefresh || "",
-  });
-
-  const latest = loadStorageModel();
-  positions.value = latest.positions;
-  quoteMap.value = latest.lastQuotes;
-  lastRefresh.value = latest.lastRefresh;
-  now.value = Date.now();
-  input.value = "";
-
-  scheduleNext();
+  scheduleNext(true);
 }
 
 function loadTestData() {
