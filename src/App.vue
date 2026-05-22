@@ -67,15 +67,15 @@
     <table>
       <thead>
         <tr>
-          <th>Name</th>
+          <th @click="sortBy('name')" style="cursor: pointer;">Name ↕</th>
           <th class="wide-only">Exch.</th>
           <th class="wide-only">Buy-In</th>
           <th class="wide-only">Want</th>
           <th>Current</th>
-          <th>Today</th>
-          <th>%P&amp;L</th>
-          <th class="wide-only">Invested</th>
-          <th>Value</th>
+          <th @click="sortBy('today')" style="cursor: pointer;">Today ↕</th>
+          <th @click="sortBy('pnl')" style="cursor: pointer;">%P&amp;L ↕</th>
+          <th class="wide-only" @click="sortBy('invested')" style="cursor: pointer;">Invested ↕</th>
+          <th @click="sortBy('value')" style="cursor: pointer;">Value ↕</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -221,13 +221,57 @@ const now = ref(Date.now());
 const uploadInput = ref<HTMLInputElement | null>(null);
 
 const showAddDialog = ref<string | null>(null);
-const activePositions = computed(() =>
-  positions.value.filter((p) => !p.sold && !p.hide),
-);
+const sortKey = ref<string | null>(null);
+const sortAsc = ref(true);
+
+const sortedPositions = computed(() => {
+  const positionsToSort = [...positions.value.filter((p) => !p.sold && !p.hide)];
+  if (!sortKey.value) return positionsToSort;
+
+  return positionsToSort.sort((a, b) => {
+    let valA: any, valB: any;
+
+    if (sortKey.value === "name") {
+      valA = a.name;
+      valB = b.name;
+    } else if (sortKey.value === "today") {
+      valA = quoteMap.value[a.isin]?.change || 0;
+      valB = quoteMap.value[b.isin]?.change || 0;
+    } else if (sortKey.value === "pnl") {
+      valA = getProfit(a) || 0;
+      valB = getProfit(b) || 0;
+    } else if (sortKey.value === "invested") {
+      valA = a.amount * a.rate;
+      valB = b.amount * b.rate;
+    } else if (sortKey.value === "value") {
+      valA = getPnlEur(a) || 0;
+      valB = getPnlEur(b) || 0;
+    } else {
+      return 0;
+    }
+
+    if (valA < valB) return sortAsc.value ? -1 : 1;
+    if (valA > valB) return sortAsc.value ? 1 : -1;
+    return 0;
+  });
+});
+
+const activePositions = computed(() => sortedPositions.value);
 const archivedPositions = computed(() => positions.value.filter((p) => p.sold));
 const totalPnl = computed(() =>
-  activePositions.value.reduce((sum, p) => sum + (getPnlEur(p) || 0), 0),
+  positions.value
+    .filter((p) => !p.sold && !p.hide)
+    .reduce((sum, p) => sum + (getPnlEur(p) || 0), 0),
 );
+
+function sortBy(key: string) {
+  if (sortKey.value === key) {
+    sortAsc.value = !sortAsc.value;
+  } else {
+    sortKey.value = key;
+    sortAsc.value = true;
+  }
+}
 
 function persistStorageModel() {
   const model: StorageModel = {
@@ -332,8 +376,13 @@ async function doRefreshAll(): Promise<void> {
     const isins = [
       ...new Set(positions.value.filter((p) => !p.hide).map((p) => p.isin)),
     ];
-    const url = `/api/quotes?isins=${encodeURIComponent(isins.join(","))}`;
-    const response = await fetch(url, { cache: "no-store" });
+    const url = `/api/quotes`;
+    const response = await fetch(url, {
+      method: "POST",
+      body: JSON.stringify(isins),
+      headers: { "content-type": "application/json" },
+      cache: "no-store",
+    });
     if (!response.ok) return;
     const data = (await response.json()) as { quotes: Record<string, Quote> };
     quoteMap.value = data.quotes || {};
@@ -349,8 +398,13 @@ async function doRefreshAll(): Promise<void> {
 async function doRefreshSingle(isin: string): Promise<void> {
   refreshing.value = true;
   try {
-    const url = `/api/quotes?isins=${encodeURIComponent(isin)}`;
-    const response = await fetch(url, { cache: "no-store" });
+    const url = `/api/quotes`;
+    const response = await fetch(url, {
+      method: "POST",
+      body: JSON.stringify([isin]),
+      headers: { "content-type": "application/json" },
+      cache: "no-store",
+    });
     if (!response.ok) return;
     const data = (await response.json()) as { quotes: Record<string, Quote> };
 

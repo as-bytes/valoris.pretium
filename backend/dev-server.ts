@@ -11,19 +11,34 @@ createServer(async (req, res) => {
 
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
 
-  if (req.method === 'GET' && url.pathname === '/api/quotes') {
-    try {
-      const isins = readIsinsFromUrl(url);
-      const payload = await fetchTradegateQuotes(isins);
-      const body = jsonResponse({ quotes: payload });
-      res.writeHead(body.status, Object.fromEntries(body.headers.entries()));
-      res.end(await body.text());
-      return;
-    } catch (error) {
-      const body = jsonResponse({ error: 'Unable to fetch quotes', detail: String(error) }, 502);
-      res.writeHead(body.status, Object.fromEntries(body.headers.entries()));
-      res.end(await body.text());
-      return;
+  if (url.pathname === '/api/quotes') {
+    if (req.method === 'GET' || req.method === 'POST') {
+      try {
+        let isins: string[] = [];
+        if (req.method === 'GET') {
+          isins = readIsinsFromUrl(url);
+        } else {
+          const buffers = [];
+          for await (const chunk of req) {
+            buffers.push(chunk);
+          }
+          const body = JSON.parse(Buffer.concat(buffers).toString());
+          if (Array.isArray(body)) {
+            isins = body;
+          }
+        }
+        
+        const payload = await fetchTradegateQuotes(isins);
+        const body = jsonResponse({ quotes: payload });
+        res.writeHead(body.status, Object.fromEntries(body.headers.entries()));
+        res.end(await body.text());
+        return;
+      } catch (error) {
+        const body = jsonResponse({ error: 'Unable to fetch quotes', detail: String(error) }, 502);
+        res.writeHead(body.status, Object.fromEntries(body.headers.entries()));
+        res.end(await body.text());
+        return;
+      }
     }
   }
 
