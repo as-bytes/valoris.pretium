@@ -28,6 +28,27 @@
         ↓ Config
       </button>
       <button class="btn" @click="triggerUpload">↑ Config</button>
+      <div class="theme-control">
+        <button
+          class="btn icon-config"
+          title="Change theme"
+          aria-label="Change theme"
+          @click="themeMenuOpen = !themeMenuOpen"
+        >
+          ⚙
+        </button>
+        <div v-if="themeMenuOpen" class="theme-menu">
+          <button
+            v-for="option in themeOptions"
+            :key="option.value"
+            class="theme-option"
+            :class="{ active: selectedTheme === option.value }"
+            @click="setTheme(option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+      </div>
       <button class="btn accent" @click="openModal()">+ Position</button>
       <input
         ref="uploadInput"
@@ -98,7 +119,9 @@
             </div>
           </td>
           <td class="wide-only">
-            <span class="exchange-badge" v-if="pos.exchange">{{ pos.exchange }}</span>
+            <span class="exchange-badge" v-if="pos.exchange">{{
+              pos.exchange
+            }}</span>
           </td>
           <td class="wide-only">{{ fmt(pos.rate) }}</td>
           <td class="wide-only">{{ pos.want ? fmt(pos.want) : "–" }}</td>
@@ -118,13 +141,44 @@
           <td>
             <div class="row-actions">
               <button
+                class="icon-btn track"
+                :class="{ active: trackedPositionId === pos.id }"
+                :title="
+                  trackedPositionId === pos.id
+                    ? 'Show total P&L in website title'
+                    : `Show ${pos.name} P&L in website title`
+                "
+                :aria-label="
+                  trackedPositionId === pos.id
+                    ? 'Show total P&L in website title'
+                    : `Show ${pos.name} P&L in website title`
+                "
+                @click="toggleTrackedPosition(pos.id)"
+              >
+                !
+              </button>
+              <button
                 class="icon-btn refresh"
+                title="Refresh this position"
+                aria-label="Refresh this position"
                 @click="doRefreshSingle(pos.isin)"
               >
                 ↺
               </button>
-              <button class="icon-btn edit" @click="openModal(pos)">✎</button>
-              <button class="icon-btn del" @click="deletePosition(pos.id)">
+              <button
+                class="icon-btn edit"
+                title="Edit this position"
+                aria-label="Edit this position"
+                @click="openModal(pos)"
+              >
+                ✎
+              </button>
+              <button
+                class="icon-btn del"
+                title="Delete this position"
+                aria-label="Delete this position"
+                @click="deletePosition(pos.id)"
+              >
                 ✕
               </button>
             </div>
@@ -173,7 +227,12 @@
             {{ quote(pos.isin)?.bid ? fmt(quote(pos.isin)?.bid || 0) : "–" }}
           </td>
           <td>
-            <button class="icon-btn del" @click="deletePosition(pos.id)">
+            <button
+              class="icon-btn del"
+              title="Delete this archived position"
+              aria-label="Delete this archived position"
+              @click="deletePosition(pos.id)"
+            >
               ✕
             </button>
           </td>
@@ -198,7 +257,12 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { STORAGE_KEY, STORAGE_VERSION } from "./constants";
+import {
+  STORAGE_KEY,
+  STORAGE_VERSION,
+  THEME_STORAGE_KEY,
+  TITLE_TRACKING_STORAGE_KEY,
+} from "./constants";
 import DialogAddPosition from "./DialogAddPosition.vue";
 import { downloadConfig } from "./storage";
 import { Position, Quote, StorageModel } from "./types";
@@ -219,6 +283,25 @@ const currentView = ref<"list" | "charts" | "archive">("list");
 const lastRefresh = ref(storageModel.lastRefresh || "");
 const now = ref(Date.now());
 const uploadInput = ref<HTMLInputElement | null>(null);
+const themeMenuOpen = ref(false);
+const themeOptions = [
+  { value: "classic", label: "Classic" },
+  { value: "dark", label: "Darker" },
+  { value: "light", label: "Light" },
+] as const;
+type ThemeName = (typeof themeOptions)[number]["value"];
+
+function readStoredTheme(): ThemeName {
+  const storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+  return themeOptions.some((theme) => theme.value === storedTheme)
+    ? (storedTheme as ThemeName)
+    : "classic";
+}
+
+const selectedTheme = ref<ThemeName>(readStoredTheme());
+const trackedPositionId = ref<string | null>(
+  localStorage.getItem(TITLE_TRACKING_STORAGE_KEY),
+);
 
 const showAddDialog = ref<string | null>(null);
 const activePositions = computed(() =>
@@ -227,6 +310,12 @@ const activePositions = computed(() =>
 const archivedPositions = computed(() => positions.value.filter((p) => p.sold));
 const totalPnl = computed(() =>
   activePositions.value.reduce((sum, p) => sum + (getPnlEur(p) || 0), 0),
+);
+const trackedPosition = computed(() =>
+  trackedPositionId.value
+    ? activePositions.value.find((p) => p.id === trackedPositionId.value) ||
+      null
+    : null,
 );
 
 function persistStorageModel() {
@@ -254,6 +343,25 @@ watch(
   },
   { deep: true },
 );
+
+watch(
+  selectedTheme,
+  (theme) => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  },
+  { immediate: true },
+);
+
+watch(trackedPositionId, (id) => {
+  if (id) {
+    localStorage.setItem(TITLE_TRACKING_STORAGE_KEY, id);
+  } else {
+    localStorage.removeItem(TITLE_TRACKING_STORAGE_KEY);
+  }
+});
+
+watch([totalPnl, trackedPosition], updateTitle, { immediate: true });
 
 function quote(isin: string) {
   return quoteMap.value[isin];
@@ -311,19 +419,29 @@ window.addEventListener("storage", () => {
   positions.value = model.positions;
   quoteMap.value = model.lastQuotes;
   lastRefresh.value = model.lastRefresh;
+  selectedTheme.value = readStoredTheme();
+  trackedPositionId.value = localStorage.getItem(TITLE_TRACKING_STORAGE_KEY);
   scheduleNext();
 });
 
+function fmtTitlePnl(value: number): string {
+  const formatted = value.toLocaleString("de-DE", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  });
+  return value > 0 ? `+${formatted}` : formatted;
+}
+
 function updateTitle() {
-  if (totalPnl.value === 0) {
-    document.title = "ValorisPretium";
-  } else {
-    const title =
-      totalPnl.value > 0
-        ? `+${fmt(totalPnl.value, 2, true)}`
-        : fmt(totalPnl.value, 2, true);
-    document.title = title;
+  const tracked = trackedPosition.value;
+  if (tracked) {
+    document.title = `${fmtTitlePnl(getPnlEur(tracked) || 0)} P&L ${tracked.name}`;
+    return;
   }
+
+  document.title = `${fmtTitlePnl(totalPnl.value)} P&L Total`;
 }
 
 async function doRefreshAll(): Promise<void> {
@@ -376,16 +494,24 @@ function scheduleNext(now = false): void {
   }
 }
 
+function setTheme(theme: ThemeName): void {
+  selectedTheme.value = theme;
+  themeMenuOpen.value = false;
+}
+
+function toggleTrackedPosition(id: string): void {
+  trackedPositionId.value = trackedPositionId.value === id ? null : id;
+}
+
 function openModal(position?: Position): void {
   showAddDialog.value = position ? position.id : "";
 }
 
 function deletePosition(id: string): void {
   positions.value = positions.value.filter((p) => p.id !== id);
-}
-
-function refreshQuote(id: string): void {
-  positions.value = positions.value.filter((p) => p.id !== id);
+  if (trackedPositionId.value === id) {
+    trackedPositionId.value = null;
+  }
 }
 
 function triggerUpload(): void {
@@ -529,6 +655,36 @@ function loadTestData() {
   --font-size-xxl: 2.5rem;
 }
 
+:root[data-theme="dark"] {
+  --bg: #000000;
+  --surface: #050506;
+  --border: #111111;
+  --border2: #202020;
+  --text: #e6e6e6;
+  --muted: #858585;
+  --accent: #39ff6a;
+  --green: #35ff84;
+  --red: #ff3d55;
+  --sold-bg: #050505;
+}
+
+:root[data-theme="light"] {
+  --bg: #f5f7fb;
+  --surface: #ffffff;
+  --border: #dce3ee;
+  --border2: #c7d0df;
+  --text: #172033;
+  --muted: #647089;
+  --accent: #0f8f3a;
+  --green: #078a35;
+  --red: #c9283c;
+  --yellow: #a66b00;
+  --sold-bg: #eef2f7;
+  --want-hit-red: #ffe8ec;
+  --want-hit-green: #e3f8eb;
+  --flash-color: #0866c2;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -593,6 +749,46 @@ header {
 }
 
 .btn.accent {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.theme-control {
+  position: relative;
+}
+
+.icon-config {
+  min-width: 34px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.theme-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  display: grid;
+  min-width: 130px;
+  padding: 6px;
+  border: 1px solid var(--border2);
+  background: var(--surface);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  z-index: 150;
+}
+
+.theme-option {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: var(--font-size-xs);
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.theme-option:hover,
+.theme-option.active {
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -774,6 +970,10 @@ td:first-child {
   color: var(--green);
 }
 
+.pill.red b {
+  color: var(--red);
+}
+
 .row-actions {
   display: flex;
   gap: 4px;
@@ -801,9 +1001,15 @@ td:first-child {
   background: var(--border2);
 }
 
-.icon-btn.edit:hover {
+.icon-btn.edit:hover,
+.icon-btn.track:hover,
+.icon-btn.track.active {
   color: var(--accent);
   border-color: var(--accent);
+}
+
+.icon-btn.track.active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .icon-btn.del:hover {
